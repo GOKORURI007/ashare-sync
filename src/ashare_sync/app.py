@@ -11,12 +11,13 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
-from .commands import sync_hist, sync_list
+from .commands import health_check, sync_hist, sync_list
 from .config import Config, DataSource, LogLevel
 
 app = typer.Typer(help='A股数据同步工具', add_completion=True)
 app.command(name='sync-list', help='同步股票和指数列表。')(sync_list.cmd)
 app.command(name='sync-hist', help='同步所有 A 股股票和指数的历史日线数据。')(sync_hist.cmd)
+app.command(name='health-check', help='检查数据集的数据完整性和正确性。')(health_check.cmd)
 
 
 def version_callback(value: bool):
