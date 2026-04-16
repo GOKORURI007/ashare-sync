@@ -1,0 +1,9 @@
+{
+    "data_dir": "~/ashare-sync-data",
+    "data_source": "sina",
+    "logger_name": "ashare_sync",
+    "log_dir": "~/ashare-sync-logs",
+    "log_file": "ashare_sync.log",
+    "log_level_file": "WARNING",
+    "log_level_stdout": "INFO"
+}

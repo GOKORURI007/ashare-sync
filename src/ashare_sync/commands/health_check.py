@@ -34,14 +34,37 @@ INDEX_REQUIRED_FIELDS = {'date', 'symbol', 'open', 'close', 'high', 'low'}
 
 
 def update_trade_date(cfg: config.Config) -> DataFrame:
-    """更新交易日日历"""
+    """更新交易日日历
+    
+    从新浪财经获取历史交易日数据并保存到 CSV 文件。
+    
+    Args:
+        cfg: 配置对象，包含数据目录路径
+        
+    Returns:
+        包含交易日数据的 DataFrame
+    """
     df = ak.tool_trade_date_hist_sina()
     df.to_csv(cfg.data_dir / 'trade_date.csv', index=False)
     return df
 
 
 def derive_missing_fields(df: DataFrame) -> DataFrame:
-    """尝试推导缺失的字段"""
+    """尝试推导缺失的字段
+    
+    根据已有的价格、成交量等数据计算衍生指标：
+    - ca (涨跌额): 当日收盘价 - 前一日收盘价
+    - cp (涨跌幅): (涨跌额 / 前一日收盘价) * 100%
+    - amplitude (振幅): (最高价 - 最低价) / 前一日收盘价 * 100%
+    - tr (换手率): (成交量 / 流通股本) * 100%
+    - outstanding_share (流通股本): 如果缺失但已知成交量和换手率，可反推
+    
+    Args:
+        df: 原始股票数据 DataFrame
+        
+    Returns:
+        补充了缺失字段的 DataFrame
+    """
     result_df = df.copy()
 
     # Calculate derived fields if missing
@@ -85,7 +108,18 @@ def derive_missing_fields(df: DataFrame) -> DataFrame:
 
 
 def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: str) -> list[str]:
-    """检查交易日对齐"""
+    """检查交易日对齐情况
+    
+    验证股票数据的日期范围是否与交易日历一致，检测是否有缺失的交易日。
+    
+    Args:
+        df: 股票数据 DataFrame
+        trade_dates: 交易日历 DataFrame
+        symbol: 股票代码
+        
+    Returns:
+        错误信息列表，如果日期对齐则返回空列表
+    """
     errors = []
 
     if df.empty or 'date' not in df.columns:
@@ -115,7 +149,17 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
 
 
 def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
-    """检查缺失字段"""
+    """检查缺失字段
+    
+    验证数据是否包含所有必需字段，以及这些字段是否存在空值。
+    
+    Args:
+        df: 待检查的 DataFrame
+        required_fields: 必需字段集合
+        
+    Returns:
+        错误信息列表，如果没有缺失则返回空列表
+    """
     errors = []
 
     # Check for completely missing columns
@@ -134,7 +178,18 @@ def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
 
 
 def check_invalid_values(df: DataFrame) -> list[str]:
-    """检查非法值"""
+    """检查非法值
+    
+    检测数据中的异常值：
+    - 负的价格或成交量
+    - 无穷大值 (inf/-inf)
+    
+    Args:
+        df: 待检查的 DataFrame
+        
+    Returns:
+        错误信息列表，如果没有非法值则返回空列表
+    """
     errors = []
 
     # Check for negative prices
@@ -162,7 +217,21 @@ def check_invalid_values(df: DataFrame) -> list[str]:
 
 
 def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataFrame:
-    """修复数据问题"""
+    """修复数据问题
+    
+    执行以下修复操作：
+    1. 补全缺失的交易日（使用前一日数据填充）
+    2. 修复缺失的开盘价：优先使用前一交易日收盘价，其次使用当日高低均价
+    3. 修复缺失的收盘价：优先使用下一交易日开盘价，其次使用当日高低均价
+    
+    Args:
+        df: 原始股票数据 DataFrame
+        trade_dates: 交易日历 DataFrame
+        symbol: 股票代码
+        
+    Returns:
+        修复后的 DataFrame
+    """
     result_df = df.copy()
 
     # Ensure date column is datetime
@@ -237,13 +306,13 @@ def health_check(cfg: config.Config, fix: bool = False):
        对缺失的 close 字段，用下一个交易日的 open 填补
        缺失的 high/low/volume 字段不处理
     """
-    logger.info('Starting health check...')
+    logger.info('开始健康检查...')
 
-    # Update trading date calendar
+    # 更新交易日历
     trade_dates = update_trade_date(cfg)
-    logger.info(f'Updated trading date calendar with {len(trade_dates)} dates')
+    logger.info(f'已更新交易日历，共 {len(trade_dates)} 个交易日')
 
-    # Get all stock files
+    # 获取所有股票文件
     stocks_dir = cfg.data_dir / 'stocks'
     index_dir = cfg.data_dir / 'index'
 
@@ -254,10 +323,10 @@ def health_check(cfg: config.Config, fix: bool = False):
         all_files.extend(list(index_dir.glob('*.csv')))
 
     if not all_files:
-        logger.warning('No data files found to check')
+        logger.warning('未找到需要检查的数据文件')
         return
 
-    logger.info(f'Checking {len(all_files)} data files...')
+    logger.info(f'正在检查 {len(all_files)} 个数据文件...')
 
     total_errors = 0
     fixed_files = 0
@@ -266,39 +335,39 @@ def health_check(cfg: config.Config, fix: bool = False):
         symbol = file_path.stem
         errors = []
 
-        # Determine if this is an index or stock file
+        # 判断是指数文件还是股票文件
         is_index_file = 'index' in str(file_path.parent)
         required_fields = INDEX_REQUIRED_FIELDS if is_index_file else STOCK_REQUIRED_FIELDS
 
         try:
-            # Read data
+            # 读取数据
             if os.path.getsize(file_path) == 0:
-                errors.append('Empty file')
+                errors.append('文件为空')
                 continue
 
             df = pd.read_csv(file_path)
             if df.empty:
-                errors.append('Empty dataframe')
+                errors.append('数据框为空')
                 continue
 
-            # Always populate symbol from filename if missing
+            # 确保 symbol 列存在且无缺失值
             if 'symbol' not in df.columns:
                 df['symbol'] = symbol
-                logger.debug(f'[{symbol}] Added missing symbol column from filename')
+                logger.debug(f'[{symbol}] 已添加缺失的 symbol 列')
             else:
-                # Fill any missing symbol values with the filename symbol
+                # 用文件名中的股票代码填充缺失的 symbol 值
                 missing_symbol_count = df['symbol'].isna().sum()
                 if missing_symbol_count > 0:
                     df['symbol'] = df['symbol'].fillna(symbol)
                     logger.debug(
-                        f'[{symbol}] Filled {missing_symbol_count} missing symbol values from filename'
+                        f'[{symbol}] 已填充 {missing_symbol_count} 个缺失的 symbol 值'
                     )
 
-            # Always try to derive missing fields (only for stocks)
+            # 始终尝试推导缺失字段（仅针对股票数据）
             if not is_index_file:
                 df = derive_missing_fields(df)
 
-            # Run all checks
+            # 执行所有检查
             date_errors = check_trading_date_alignment(df, trade_dates, symbol)
             field_errors = check_missing_fields(df, required_fields)
             invalid_errors = check_invalid_values(df)
@@ -315,31 +384,31 @@ def health_check(cfg: config.Config, fix: bool = False):
                 logger.warning(f'[{symbol}] -> {errors}')
 
                 if fix:
-                    # Apply fixes
+                    # 应用修复
                     df_fixed = fix_data_issues(df, trade_dates, symbol)
 
-                    # Save fixed data
+                    # 保存修复后的数据
                     df_fixed.to_csv(file_path, index=False)
                     fixed_files += 1
-                    logger.info(f'Fixed {symbol} - saved {len(df_fixed)} records')
+                    logger.info(f'已修复 {symbol} - 保存 {len(df_fixed)} 条记录')
             else:
-                logger.debug(f'[{symbol}] -> OK')
+                logger.debug(f'[{symbol}] -> 正常')
 
         except Exception as e:
-            error_msg = f'Error processing {symbol}: {e}'
+            error_msg = f'处理 {symbol} 时出错: {e}'
             errors.append(error_msg)
             logger.error(error_msg)
             total_errors += 1
 
-    # Summary
-    logger.info(f'Health check completed. Total errors: {total_errors}')
+    # 汇总报告
+    logger.info(f'健康检查完成。总错误数: {total_errors}')
     if fix:
-        logger.info(f'Fixed {fixed_files} files')
+        logger.info(f'已修复 {fixed_files} 个文件')
 
     if total_errors == 0:
-        logger.success('All data files are healthy!')
+        logger.success('所有数据文件均正常！')
     elif fix:
-        logger.success(f'Applied fixes to {fixed_files} files')
+        logger.success(f'已对 {fixed_files} 个文件应用修复')
 
 
 @app.command()
