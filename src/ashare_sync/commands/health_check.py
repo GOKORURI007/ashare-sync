@@ -14,14 +14,23 @@ app = typer.Typer(help='检查数据集的数据完整性和正确性。')
 
 # Required fields for stock data
 STOCK_REQUIRED_FIELDS = {
-    'date', 'symbol', 'open', 'close', 'high', 'low',
-    'volume', 'turnover', 'amplitude', 'cp', 'ca', 'tr', 'outstanding_share'
+    'date',
+    'symbol',
+    'open',
+    'close',
+    'high',
+    'low',
+    'volume',
+    'turnover',
+    'amplitude',
+    'cp',
+    'ca',
+    'tr',
+    'outstanding_share',
 }
 
 # Required fields for index data (simpler)
-INDEX_REQUIRED_FIELDS = {
-    'date', 'symbol', 'open', 'close', 'high', 'low'
-}
+INDEX_REQUIRED_FIELDS = {'date', 'symbol', 'open', 'close', 'high', 'low'}
 
 
 def update_trade_date(cfg: config.Config) -> DataFrame:
@@ -68,9 +77,9 @@ def derive_missing_fields(df: DataFrame) -> DataFrame:
             # outstanding_share = volume * 100 / tr (since tr = volume/outstanding_share * 100)
             result_df['outstanding_share'] = (result_df['volume'] * 100) / result_df['tr']
             result_df['outstanding_share'] = result_df['outstanding_share'].replace(
-                [np.inf, -np.inf], np.nan)
-            result_df['outstanding_share'] = result_df['outstanding_share'].fillna(
-                method='ffill').fillna(method='bfill')
+                [np.inf, -np.inf], np.nan
+            )
+            result_df['outstanding_share'] = result_df['outstanding_share'].ffill().bfill()
 
     return result_df
 
@@ -80,7 +89,7 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
     errors = []
 
     if df.empty or 'date' not in df.columns:
-        errors.append(f"Missing date column")
+        errors.append(f'Missing date column')
         return errors
 
     # Convert dates to datetime for comparison
@@ -92,26 +101,27 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
     trade_dates_dt = pd.to_datetime(trade_dates['trade_date']).dt.date
     expected_dates = trade_dates_dt[
         (trade_dates_dt >= min_date) & (trade_dates_dt <= max_date)
-        ].tolist()
+    ].tolist()
 
     actual_dates = df_dates.tolist()
     missing_dates = set(expected_dates) - set(actual_dates)
 
     if missing_dates:
         errors.append(
-            f"Missing {len(missing_dates)} trading dates in range {min_date} to {max_date}")
+            f'Missing {len(missing_dates)} trading dates in range {min_date} to {max_date}'
+        )
 
     return errors
 
 
-def check_missing_fields(df: DataFrame, symbol: str, required_fields: set) -> list[str]:
+def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
     """检查缺失字段"""
     errors = []
 
     # Check for completely missing columns
     missing_columns = required_fields - set(df.columns)
     if missing_columns:
-        errors.append(f"Missing columns: {missing_columns}")
+        errors.append(f'Missing columns: {missing_columns}')
 
     # Check for columns with null values
     for col in required_fields:
@@ -123,7 +133,7 @@ def check_missing_fields(df: DataFrame, symbol: str, required_fields: set) -> li
     return errors
 
 
-def check_invalid_values(df: DataFrame, symbol: str) -> list[str]:
+def check_invalid_values(df: DataFrame) -> list[str]:
     """检查非法值"""
     errors = []
 
@@ -151,7 +161,7 @@ def check_invalid_values(df: DataFrame, symbol: str) -> list[str]:
     return errors
 
 
-def fix_data_issues(df: DataFrame, trade_dates: DataFrame) -> DataFrame:
+def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataFrame:
     """修复数据问题"""
     result_df = df.copy()
 
@@ -165,33 +175,39 @@ def fix_data_issues(df: DataFrame, trade_dates: DataFrame) -> DataFrame:
     trade_dates_dt = pd.to_datetime(trade_dates['trade_date']).dt.date
     expected_dates = trade_dates_dt[
         (trade_dates_dt >= min_date) & (trade_dates_dt <= max_date)
-        ].tolist()
+    ].tolist()
 
     # Create complete date range
     complete_df = pd.DataFrame({'date': expected_dates})
     result_df = complete_df.merge(result_df, on='date', how='left')
 
     # Fill missing open with previous close
-    if 'open' in result_df.columns and 'close' in result_df.columns:
-        result_df['open'] = result_df['open'].fillna(method='ffill')
-        # For first row, if open is still missing, use close
-        result_df['open'] = result_df['open'].fillna(result_df['close'])
+    if all(col in result_df.columns for col in ['open', 'close', 'low', 'high']):
+        # 1. 如果 open 缺失，先用前一行的 close 填充
+        # shift(1) 将 close 列向下移动一位，使其对齐下一行的 open
+        result_df['open'] = result_df['open'].fillna(result_df['close'].shift(1))
+
+        # 2. 处理首行依然缺失的情况（因为 shift(1) 会导致第一行产生 NaN）
+        # 使用 low 和 high 的均值填充
+        avg_price = (result_df['low'] + result_df['high']) / 2
+        result_df['open'] = result_df['open'].fillna(avg_price)
 
     # Fill missing close with next open
-    if 'close' in result_df.columns and 'open' in result_df.columns:
-        result_df['close'] = result_df['close'].fillna(method='bfill')
-        # For last row, if close is still missing, use open
-        result_df['close'] = result_df['close'].fillna(result_df['open'])
+    if all(col in result_df.columns for col in ['open', 'close', 'low', 'high']):
+        # 1. 缺失的今日收盘 = 明日开盘
+        # shift(-1) 会将数据整体上移，把“明日开盘”挪到“今日”的位置
+        result_df['close'] = result_df['close'].fillna(result_df['open'].shift(-1))
 
-    # Forward fill symbol if missing
-    if 'symbol' in result_df.columns:
-        result_df['symbol'] = result_df['symbol'].fillna(method='ffill').fillna(method='bfill')
+        # 2. 如果是最后一行依然缺失（因为 shift(-1) 会让最后一行产生 NaN）
+        # 按照你的要求，取当日 low 和 high 的均值
+        avg_price = (result_df['low'] + result_df['high']) / 2
+        result_df['close'] = result_df['close'].fillna(avg_price)
 
     return result_df
 
 
 def health_check(cfg: config.Config, fix: bool = False):
-    """ 检查数据集的数据完整性和正确性。
+    """检查数据集的数据完整性和正确性。
     1. 检查每支股票的交易日与交易日历的对齐，即股票最早日期到最终日期应当与交易日历中对应的时间段一致，不应当缺少某些日期
     2. 检查股票是否存在缺失字段，股票应当包含以下字段：
         - date: 交易日期
@@ -208,24 +224,24 @@ def health_check(cfg: config.Config, fix: bool = False):
         - tr: 换手率 (%)
         - outstanding_share: 流通股本
 
-        如果 turnover, amplitude, cp, ca, tr 缺失，尝试通过outstanding_share补全。
-        如果尝试通过outstanding_share补全缺失，尝试通过volume和tr补全。
-        无论fix是否为True，均尝试补全。如果无法补全，标记为缺失。
+        如果 turnover, amplitude, cp, ca, tr 缺失，尝试通过 outstanding_share 补全。
+        如果尝试通过 outstanding_share 补全缺失，尝试通过 volume 和 tr 补全。
+        无论 fix 是否为 True，均尝试补全。如果无法补全，标记为缺失。
 
-    3. 检查数据中是否存在空值/非法值。
+    3. 检查数据中是否存在空值 / 非法值。
 
-    当fix==False时，仅输出[symbol]->[error]报告。
-    当fix==True时：
+    当 fix==False 时，仅输出 [symbol]->[error] 报告。
+    当 fix==True 时：
     1. 对缺失的交易日，用前一个交易日的信息作为填补
-    2. 对缺失的open字段，用前一个交易日的close填补
-       对缺失的close字段，用下一个交易日的open填补
-       缺失的high/low/volume字段不处理
+    2. 对缺失的 open 字段，用前一个交易日的 close 填补
+       对缺失的 close 字段，用下一个交易日的 open 填补
+       缺失的 high/low/volume 字段不处理
     """
-    logger.info("Starting health check...")
+    logger.info('Starting health check...')
 
     # Update trading date calendar
     trade_dates = update_trade_date(cfg)
-    logger.info(f"Updated trading date calendar with {len(trade_dates)} dates")
+    logger.info(f'Updated trading date calendar with {len(trade_dates)} dates')
 
     # Get all stock files
     stocks_dir = cfg.data_dir / 'stocks'
@@ -238,15 +254,15 @@ def health_check(cfg: config.Config, fix: bool = False):
         all_files.extend(list(index_dir.glob('*.csv')))
 
     if not all_files:
-        logger.warning("No data files found to check")
+        logger.warning('No data files found to check')
         return
 
-    logger.info(f"Checking {len(all_files)} data files...")
+    logger.info(f'Checking {len(all_files)} data files...')
 
     total_errors = 0
     fixed_files = 0
 
-    for file_path in tqdm(all_files, desc="Health checking"):
+    for file_path in tqdm(all_files, desc='Health checking'):
         symbol = file_path.stem
         errors = []
 
@@ -257,13 +273,26 @@ def health_check(cfg: config.Config, fix: bool = False):
         try:
             # Read data
             if os.path.getsize(file_path) == 0:
-                errors.append("Empty file")
+                errors.append('Empty file')
                 continue
 
             df = pd.read_csv(file_path)
             if df.empty:
-                errors.append("Empty dataframe")
+                errors.append('Empty dataframe')
                 continue
+
+            # Always populate symbol from filename if missing
+            if 'symbol' not in df.columns:
+                df['symbol'] = symbol
+                logger.debug(f'[{symbol}] Added missing symbol column from filename')
+            else:
+                # Fill any missing symbol values with the filename symbol
+                missing_symbol_count = df['symbol'].isna().sum()
+                if missing_symbol_count > 0:
+                    df['symbol'] = df['symbol'].fillna(symbol)
+                    logger.debug(
+                        f'[{symbol}] Filled {missing_symbol_count} missing symbol values from filename'
+                    )
 
             # Always try to derive missing fields (only for stocks)
             if not is_index_file:
@@ -271,51 +300,50 @@ def health_check(cfg: config.Config, fix: bool = False):
 
             # Run all checks
             date_errors = check_trading_date_alignment(df, trade_dates, symbol)
-            field_errors = check_missing_fields(df, symbol, required_fields)
-            invalid_errors = check_invalid_values(df, symbol)
+            field_errors = check_missing_fields(df, required_fields)
+            invalid_errors = check_invalid_values(df)
 
             errors.extend(date_errors)
             errors.extend(field_errors)
             errors.extend(invalid_errors)
 
+            if not errors or not fix:
+                df.to_csv(file_path, index=False)
+
             if errors:
                 total_errors += len(errors)
-                logger.warning(f"[{symbol}] -> {errors}")
+                logger.warning(f'[{symbol}] -> {errors}')
 
                 if fix:
                     # Apply fixes
-                    df_fixed = fix_data_issues(df, trade_dates)
-                    df_fixed = derive_missing_fields(df_fixed)
+                    df_fixed = fix_data_issues(df, trade_dates, symbol)
 
                     # Save fixed data
                     df_fixed.to_csv(file_path, index=False)
                     fixed_files += 1
-                    logger.info(f"Fixed {symbol} - saved {len(df_fixed)} records")
+                    logger.info(f'Fixed {symbol} - saved {len(df_fixed)} records')
             else:
-                logger.debug(f"[{symbol}] -> OK")
+                logger.debug(f'[{symbol}] -> OK')
 
         except Exception as e:
-            error_msg = f"Error processing {symbol}: {e}"
+            error_msg = f'Error processing {symbol}: {e}'
             errors.append(error_msg)
             logger.error(error_msg)
             total_errors += 1
 
     # Summary
-    logger.info(f"Health check completed. Total errors: {total_errors}")
+    logger.info(f'Health check completed. Total errors: {total_errors}')
     if fix:
-        logger.info(f"Fixed {fixed_files} files")
+        logger.info(f'Fixed {fixed_files} files')
 
     if total_errors == 0:
-        logger.success("All data files are healthy!")
+        logger.success('All data files are healthy!')
     elif fix:
-        logger.success(f"Applied fixes to {fixed_files} files")
+        logger.success(f'Applied fixes to {fixed_files} files')
 
 
 @app.command()
-def cmd(
-    ctx: typer.Context,
-    fix: bool = typer.Option(False, '--fix', help='自动修复错误')
-):
+def cmd(ctx: typer.Context, fix: bool = typer.Option(False, '--fix', help='自动修复错误')):
     """检查数据集的数据完整性和正确性"""
     cfg: config.Config = ctx.obj
     health_check(cfg, fix)

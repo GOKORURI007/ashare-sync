@@ -269,6 +269,7 @@ def sync_daily_history(cfg: config.Config):
             if index_daily_history.empty:
                 logger.debug(f'No new data for index {row["symbol"]} since {last_day}')
                 continue
+            index_daily_history['symbol'] = row['symbol']
             index_daily_history = pd.concat(
                 [old_data, index_daily_history], axis=0
             ).drop_duplicates(subset=['date'])
@@ -285,7 +286,7 @@ def sync_daily_history(cfg: config.Config):
             logger.debug(
                 f'Fetched full history for index {row["symbol"]} ({len(index_daily_history)} records)'
             )
-
+        index_daily_history['symbol'] = row['symbol']
         index_daily_history.to_csv(index_datapath, index=False)
         index_success += 1
 
