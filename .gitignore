@@ -3,5 +3,5 @@
 **/htmlcov/
 .venv/
 .idea/
-
+data
 **/.coverage

@@ -14,9 +14,9 @@ from . import __version__
 from .commands import sync_hist, sync_list
 from .config import Config, DataSource, LogLevel
 
-app = typer.Typer(help='ashare_sync', add_completion=True)
-app.command(name="sync-list", help='Sync stock&index list.')(sync_list.cmd)
-app.command(name="sync-hist", help='同步所有 A 股股票和指数的历史日线数据。')(sync_hist.cmd)
+app = typer.Typer(help='A股数据同步工具', add_completion=True)
+app.command(name='sync-list', help='同步股票和指数列表。')(sync_list.cmd)
+app.command(name='sync-hist', help='同步所有 A 股股票和指数的历史日线数据。')(sync_hist.cmd)
 
 
 def version_callback(value: bool):
@@ -28,15 +28,16 @@ def version_callback(value: bool):
 @app.callback()
 def main(
     ctx: typer.Context,
-    config: Annotated[Path, typer.Option(help='Path to the configuration file')] = user_config_path(
+    config: Annotated[Path, typer.Option(help='配置文件路径')] = user_config_path(
         appname='ashare_sync', ensure_exists=True
-    ) / 'config.json',
-    data_dir: Annotated[Path | None, typer.Option(help='Log directory location')] = user_data_path(
+    )
+                                                                 / 'config.json',
+    data_dir: Annotated[Path | None, typer.Option(help='数据目录位置')] = user_data_path(
         appname='ashare_sync', appauthor='GOKORURI007'
     ),
     data_source: Annotated[DataSource | None, typer.Option(help='数据源')] = 'sina',
     logger_name: Annotated[str | None, typer.Option(help='Logger name')] = 'ashare_sync',
-    log_dir: Annotated[Path | None, typer.Option(help='Log directory location')] = user_log_path(
+    log_dir: Annotated[Path | None, typer.Option(help='日志目录位置')] = user_log_path(
         appname='ashare_sync', appauthor='GOKORURI007'
     ),
     log_file: Annotated[str | None, typer.Option(help='Log file name')] = 'ashare_sync.log',
@@ -46,7 +47,7 @@ def main(
         bool | None,
         typer.Option(
             '--show-config',
-            help='Show current config.',
+            help='显示当前配置。',
         ),
     ] = None,
     version: Annotated[
@@ -54,18 +55,18 @@ def main(
         typer.Option(
             '--version',
             '-v',
-            help='Show the version and exit.',
+            help='显示版本并退出。',
             callback=version_callback,
             is_eager=True,  # 确保在其他参数处理之前运行
         ),
     ] = None,
 ):
     """
-    Synchronizing A-share data, which supports overriding JSON configurations via command-line arguments.
-    The priority is CLI > config_file > default
+    同步 A 股数据，支持通过命令行参数覆盖 JSON 配置。
+    优先级：命令行 > 配置文件 > 默认值
     """
 
-    # 1. Load the JSON configuration file
+    # 1. 加载 JSON 配置文件
     if not config.exists():
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text('{}', encoding='utf-8')
@@ -76,13 +77,13 @@ def main(
     except json.JSONDecodeError:
         json_dict = {}
 
-    # 2. Instantiate base configuration (filter invalid fields)
+    # 2. 实例化基础配置（过滤无效字段）
     valid_fields = {f.name for f in fields(Config)}
     filtered_json = {k: v for k, v in json_dict.items() if k in valid_fields}
     cfg = Config(**filtered_json)
 
-    # 3. Collect the parameters passed in by the CLI (i.e. the non-non-none) part of locals())
-    # Exclude parameters that are not Config fields, such as config_file
+    # 3. 收集 CLI 传入的参数（即非默认值部分）
+    # 排除不属于 Config 字段的参数，如 config_file
     cli_args = locals()
     overrides = {}
     for k in valid_fields:
@@ -91,7 +92,7 @@ def main(
             if source != ParameterSource.DEFAULT:
                 overrides[k] = cli_args[k]
 
-    # Override config
+    # 覆盖配置
     cfg = replace(cfg, **overrides)
 
     if show_config:

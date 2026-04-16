@@ -9,7 +9,7 @@ from loguru import logger
 
 from .. import config
 
-app = typer.Typer(help='Sync stock&index list.')
+app = typer.Typer(help='同步股票和指数列表。')
 
 
 def sync_stock_list(cfg: config.Config):
@@ -29,19 +29,19 @@ def sync_stock_list(cfg: config.Config):
         - {data_dir}/bj_code_name.csv: 北交所股票列表
     """
     data_dir = cfg.data_dir
-    logger.info('Starting A-share stock list sync...')
+    logger.info('开始同步 A 股股票列表...')
 
-    logger.debug('Fetching Shenzhen stock list...')
+    logger.debug('获取深交所股票列表...')
     sz_code_name = ak.stock_info_sz_name_code()
-    logger.debug(f'Shenzhen stocks: {len(sz_code_name)} records')
+    logger.debug(f'深交所股票：{len(sz_code_name)} 条记录')
 
-    logger.debug('Fetching Shanghai stock list...')
+    logger.debug('获取上交所股票列表...')
     sh_code_name = ak.stock_info_sh_name_code()
-    logger.debug(f'Shanghai stocks: {len(sh_code_name)} records')
+    logger.debug(f'上交所股票：{len(sh_code_name)} 条记录')
 
-    logger.debug('Fetching Beijing stock list...')
+    logger.debug('获取北交所股票列表...')
     bj_code_name = ak.stock_info_bj_name_code()
-    logger.debug(f'Beijing stocks: {len(bj_code_name)} records')
+    logger.debug(f'北交所股票：{len(bj_code_name)} 条记录')
 
     a_code_name = pd.DataFrame({
         'symbol': pd.concat(
@@ -65,7 +65,7 @@ def sync_stock_list(cfg: config.Config):
     bj_code_name.to_csv(os.path.join(data_dir, 'bj_code_name.csv'), index=False)
     a_code_name.to_csv(os.path.join(data_dir, 'a_code_name.csv'), index=False)
 
-    logger.success(f'Stock list sync completed. Total: {len(a_code_name)} stocks saved.')
+    logger.success(f'股票列表同步完成。总计：{len(a_code_name)} 只股票已保存。')
 
 
 def sync_index_list(cfg: config.Config):
@@ -81,10 +81,10 @@ def sync_index_list(cfg: config.Config):
         - {data_dir}/a_index_code_name.csv: 指数列表，包含 symbol、code、name
     """
     data_dir = cfg.data_dir
-    logger.info('Starting A-share index list sync...')
+    logger.info('开始同步 A 股指数列表...')
 
     index_info = ak.stock_zh_index_spot_sina()
-    logger.debug(f'Fetched {len(index_info)} index records')
+    logger.debug(f'获取到 {len(index_info)} 条指数记录')
 
     index_a_code_name = pd.DataFrame({
         'symbol': index_info['代码'],
@@ -93,7 +93,7 @@ def sync_index_list(cfg: config.Config):
     })
     index_a_code_name.to_csv(os.path.join(data_dir, 'a_index_code_name.csv'), index=False)
 
-    logger.success(f'Index list sync completed. Total: {len(index_a_code_name)} indices saved.')
+    logger.success(f'指数列表同步完成。总计：{len(index_a_code_name)} 个指数已保存。')
 
 
 @app.command()
@@ -103,14 +103,14 @@ def cmd(
         bool | None,
         typer.Option(
             '--skip-stock',
-            help='Skip stock list sync',
+            help='跳过股票列表同步',
         ),
     ] = False,
     skip_index: Annotated[
         bool | None,
         typer.Option(
             '--skip-index',
-            help='Skip index list sync',
+            help='跳过指数列表同步',
         ),
     ] = False,
 ):

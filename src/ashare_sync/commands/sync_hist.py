@@ -54,7 +54,7 @@ def get_stock_daily_history(
     end_date: str,
     period: str = 'daily',
     adjust: str = 'hfq',
-    old_data: DataFrame | None = None
+    old_data: DataFrame | None = None,
 ):
     """
     获取股票每日历史行情数据。
@@ -100,12 +100,12 @@ def get_stock_daily_history(
             period=period,
             start_date=start_date,
             end_date=end_date,
-            adjust=adjust
+            adjust=adjust,
         )
         if new_df is not None:
             new_df = new_df.rename(columns=EAST_MONEY_DATA_DICT)
             new_df['symbol'] = symbol
-        return None
+        return new_df
     elif cfg.data_source == 'sina':
         new_df = ak.stock_zh_a_daily(
             symbol=symbol,
@@ -128,7 +128,7 @@ def get_stock_daily_history(
 
         # 3. 【全量重算】派生指标
         # 无论 old_data 有没有这些列，直接通过向量化操作覆盖它们
-        # 这样可以自动修补“断层”并统一旧数据格式
+        # 这样可以自动修补"断层"并统一旧数据格式
 
         last_close = df['close'].shift(1)
 
@@ -137,7 +137,7 @@ def get_stock_daily_history(
         df['amplitude'] = (df['high'] - df['low']) / last_close * 100
 
         # 4. 股本与换手率的特殊处理
-        if cfg.data_source == 'east_money':
+        if cfg.data_source == 'em':
             # 优先通过东财的成交量和换手率反推股本
             # 即使 old_data 没这列，这里也会全量创建
             df['outstanding_share'] = (df['volume'] * 100) / (df['tr'] / 100)
@@ -151,8 +151,9 @@ def get_stock_daily_history(
         df[['ca', 'cp', 'amplitude', 'tr']] = df[['ca', 'cp', 'amplitude', 'tr']].fillna(0)
 
         # 流动股本必须前向 + 后向填充（解决停牌导致的 inf 和首行 NaN）
-        df['outstanding_share'] = df['outstanding_share'].replace([np.inf, -np.inf],
-                                                                  np.nan).ffill().bfill()
+        df['outstanding_share'] = (
+            df['outstanding_share'].replace([np.inf, -np.inf], np.nan).ffill().bfill()
+        )
     else:
         raise NotImplementedError(f'不支持数据源 {cfg.data_source}')
 
@@ -268,10 +269,9 @@ def sync_daily_history(cfg: config.Config):
             if index_daily_history.empty:
                 logger.debug(f'No new data for index {row["symbol"]} since {last_day}')
                 continue
-            index_daily_history = pd.concat([old_data, index_daily_history],
-                                            axis=0).drop_duplicates(
-                subset=['date']
-            )
+            index_daily_history = pd.concat(
+                [old_data, index_daily_history], axis=0
+            ).drop_duplicates(subset=['date'])
             logger.debug(
                 f'Updated index {row["symbol"]} ({len(index_daily_history) - len(old_data)} new records)'
             )
