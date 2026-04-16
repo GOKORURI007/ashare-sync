@@ -1,9 +1,16 @@
 [project]
-name = "zotero-mcp-py"
-version = "0.1.3"
-description = "Add your description here"
-requires-python = ">=3.13"
+name = "ashare-sync"
+version = "0.1.0"
+description = "用于同步A股数据。Used for synchronizing A-share data."
+requires-python = ">=3.13,<3.14"
 dependencies = [
+    "akshare>=1.18.55",
+    "loguru>=0.7.3",
+    "pandas>=3.0.2",
+    "platformdirs>=4.9.6",
+    "rich>=15.0.0",
+    "tqdm>=4.67.3",
+    "typer>=0.24.1",
 ]
 
 [dependency-groups]
@@ -17,6 +24,16 @@ dev = [
     "ruff>=0.14.14",
     "semver>=3.0.4",
 ]
+
+[project.scripts]
+ashare-sync = "ashare_sync.__main__:app"
+
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ashare_sync"]
 
 [tool.ruff]
 preview = true
@@ -36,3 +53,6 @@ line-ending = "lf"
 [tool.ruff.lint]
 preview = true
 select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.uv.sources]
+ashare-sync = { workspace = true, editable = true }
