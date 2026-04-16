@@ -17,6 +17,7 @@ The project follows a modular CLI architecture using Typer:
 - **Commands** (`src/ashare_sync/commands/`): Modular command implementations
     - `sync_list.py`: Synchronizes stock and index listing data
     - `sync_hist.py`: Synchronizes historical daily price data
+  - `health_check.py`: Validates data integrity and optionally fixes issues
 - **Configuration** (`src/ashare_sync/config.py`): Dataclass-based configuration with
   platform-appropriate paths
 - **Utilities** (`src/ashare_sync/utils.py`): Logger initialization
@@ -51,6 +52,12 @@ uv run ashare-sync sync-list
 
 # Sync historical data
 uv run ashare-sync sync-hist
+
+# Check data integrity
+uv run ashare-sync health-check
+
+# Check and fix data issues
+uv run ashare-sync health-check --fix
 
 # Show current configuration
 uv run ashare-sync --show-config
@@ -139,3 +146,7 @@ versioning and changelog generation.
 - Data sources have different schemas requiring column mapping
 - Derived metrics (change %, amplitude, turnover) are calculated consistently across sources
 - The tool handles both full historical sync and incremental updates
+- Health check validates data integrity and can automatically fix common issues like missing trading
+  dates and null values
+- Trading date calendar is automatically updated during health checks to ensure accurate date
+  alignment
