@@ -1,7 +1,7 @@
 # ashare-sync
 
-[![License](https://img.shields.io/github/license/GOKORURI007/ashare-sync)](https://github.com/GOKORURI007/ashare-sync/blob/master/LICENSE)
-[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![GitHub License](https://img.shields.io/github/license/GOKORURI007/ashare-sync)](https://github.com/GOKORURI007/ashare-sync/blob/master/LICENSE)
+[![Python Version](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 
 [English](./README.md) | [简体中文](./docs/README-zhCN.md)
 

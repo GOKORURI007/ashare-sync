@@ -40,6 +40,7 @@ class Config:
         log_level_file: 文件日志的输出级别，默认为 WARNING，减少磁盘写入
         log_level_stdout: 控制台日志的输出级别，默认为 INFO，提供实时反馈
     """
+
     # 数据存储目录（使用平台特定的用户数据目录）
     data_dir: Path = user_data_path(appname='ashare_sync', appauthor='GOKORURI007')
     # 数据源选择

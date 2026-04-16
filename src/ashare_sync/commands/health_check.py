@@ -35,12 +35,12 @@ INDEX_REQUIRED_FIELDS = {'date', 'symbol', 'open', 'close', 'high', 'low'}
 
 def update_trade_date(cfg: config.Config) -> DataFrame:
     """更新交易日日历
-    
+
     从新浪财经获取历史交易日数据并保存到 CSV 文件。
-    
+
     Args:
         cfg: 配置对象，包含数据目录路径
-        
+
     Returns:
         包含交易日数据的 DataFrame
     """
@@ -51,17 +51,17 @@ def update_trade_date(cfg: config.Config) -> DataFrame:
 
 def derive_missing_fields(df: DataFrame) -> DataFrame:
     """尝试推导缺失的字段
-    
+
     根据已有的价格、成交量等数据计算衍生指标：
     - ca (涨跌额): 当日收盘价 - 前一日收盘价
     - cp (涨跌幅): (涨跌额 / 前一日收盘价) * 100%
     - amplitude (振幅): (最高价 - 最低价) / 前一日收盘价 * 100%
     - tr (换手率): (成交量 / 流通股本) * 100%
     - outstanding_share (流通股本): 如果缺失但已知成交量和换手率，可反推
-    
+
     Args:
         df: 原始股票数据 DataFrame
-        
+
     Returns:
         补充了缺失字段的 DataFrame
     """
@@ -109,21 +109,21 @@ def derive_missing_fields(df: DataFrame) -> DataFrame:
 
 def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: str) -> list[str]:
     """检查交易日对齐情况
-    
+
     验证股票数据的日期范围是否与交易日历一致，检测是否有缺失的交易日。
-    
+
     Args:
         df: 股票数据 DataFrame
         trade_dates: 交易日历 DataFrame
         symbol: 股票代码
-        
+
     Returns:
         错误信息列表，如果日期对齐则返回空列表
     """
     errors = []
 
     if df.empty or 'date' not in df.columns:
-        errors.append(f'Missing date column')
+        errors.append('Missing date column')
         return errors
 
     # Convert dates to datetime for comparison
@@ -150,13 +150,13 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
 
 def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
     """检查缺失字段
-    
+
     验证数据是否包含所有必需字段，以及这些字段是否存在空值。
-    
+
     Args:
         df: 待检查的 DataFrame
         required_fields: 必需字段集合
-        
+
     Returns:
         错误信息列表，如果没有缺失则返回空列表
     """
@@ -179,14 +179,14 @@ def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
 
 def check_invalid_values(df: DataFrame) -> list[str]:
     """检查非法值
-    
+
     检测数据中的异常值：
     - 负的价格或成交量
     - 无穷大值 (inf/-inf)
-    
+
     Args:
         df: 待检查的 DataFrame
-        
+
     Returns:
         错误信息列表，如果没有非法值则返回空列表
     """
@@ -218,17 +218,17 @@ def check_invalid_values(df: DataFrame) -> list[str]:
 
 def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataFrame:
     """修复数据问题
-    
+
     执行以下修复操作：
     1. 补全缺失的交易日（使用前一日数据填充）
     2. 修复缺失的开盘价：优先使用前一交易日收盘价，其次使用当日高低均价
     3. 修复缺失的收盘价：优先使用下一交易日开盘价，其次使用当日高低均价
-    
+
     Args:
         df: 原始股票数据 DataFrame
         trade_dates: 交易日历 DataFrame
         symbol: 股票代码
-        
+
     Returns:
         修复后的 DataFrame
     """
@@ -359,9 +359,7 @@ def health_check(cfg: config.Config, fix: bool = False):
                 missing_symbol_count = df['symbol'].isna().sum()
                 if missing_symbol_count > 0:
                     df['symbol'] = df['symbol'].fillna(symbol)
-                    logger.debug(
-                        f'[{symbol}] 已填充 {missing_symbol_count} 个缺失的 symbol 值'
-                    )
+                    logger.debug(f'[{symbol}] 已填充 {missing_symbol_count} 个缺失的 symbol 值')
 
             # 始终尝试推导缺失字段（仅针对股票数据）
             if not is_index_file:
