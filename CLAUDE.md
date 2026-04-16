@@ -29,6 +29,7 @@ The project follows a modular CLI architecture using Typer:
 - **pandas**: Data manipulation
 - **loguru**: Logging
 - **tqdm**: Progress bars
+- **platformdirs**: Platform-appropriate directory management
 
 ## Common Development Commands
 
@@ -50,6 +51,12 @@ uv run ashare-sync --help
 # Sync stock and index lists
 uv run ashare-sync sync-list
 
+# Sync stock lists only
+uv run ashare-sync sync-list --skip-index
+
+# Sync index lists only
+uv run ashare-sync sync-list --skip-stock
+
 # Sync historical data
 uv run ashare-sync sync-hist
 
@@ -64,6 +71,9 @@ uv run ashare-sync --show-config
 
 # Run with custom config file
 uv run ashare-sync --config /path/to/config.json sync-list
+
+# Use East Money as data source
+uv run ashare-sync --data-source em sync-hist
 ```
 
 ### Development Tasks
@@ -115,6 +125,7 @@ data_dir/
 ├── sz_code_name.csv         # Shenzhen stocks
 ├── sh_code_name.csv         # Shanghai stocks
 ├── bj_code_name.csv         # Beijing stocks
+├── trade_date.csv           # Trading calendar
 ├── stocks/                  # Individual stock data
 │   └── {symbol}.csv
 └── index/                   # Individual index data
@@ -127,6 +138,69 @@ data_dir/
 2. **Error Handling**: Individual stock failures don't stop the entire sync process
 3. **Progress Tracking**: Uses tqdm for progress bars during bulk operations
 4. **Data Validation**: Handles missing/empty files gracefully
+5. **Cross-source Compatibility**: Supports both Sina Finance and East Money data sources with
+   unified schemas
+
+## Data Schema
+
+### Stock Data Fields
+
+All stock data files contain the following fields:
+
+- `date`: Trading date (YYYY-MM-DD format)
+- `symbol`: Stock symbol with exchange prefix (e.g., 'sh600000', 'sz000001')
+- `open`: Opening price
+- `close`: Closing price
+- `high`: Highest price
+- `low`: Lowest price
+- `volume`: Trading volume (shares)
+- `turnover`: Trading amount (currency)
+- `amplitude`: Price amplitude percentage
+- `cp`: Price change percentage
+- `ca`: Price change amount
+- `tr`: Turnover rate percentage
+- `outstanding_share`: Outstanding shares (calculated from volume and turnover rate)
+
+### Index Data Fields
+
+Index data files contain a simplified schema:
+
+- `date`: Trading date
+- `symbol`: Index symbol
+- `open`: Opening price
+- `close`: Closing price
+- `high`: Highest price
+- `low`: Lowest price
+
+## Health Check Capabilities
+
+The health check system validates and optionally fixes:
+
+1. **Trading Date Alignment**: Ensures stock data dates align with the official trading calendar
+2. **Missing Fields**: Detects and attempts to derive missing calculated fields (amplitude, cp, ca,
+   tr, outstanding_share)
+3. **Data Integrity**: Checks for negative prices/volumes and infinite values
+4. **Automatic Fixes**: When `--fix` flag is used:
+    - Fills missing trading dates using previous day's data
+    - Fills missing open prices using previous close or daily average
+    - Fills missing close prices using next day's open or daily average
+    - Derives missing calculated fields from available data
+
+## Data Source Handling
+
+### Sina Finance (`sina`)
+
+- Uses `ak.stock_zh_a_daily()` for stock data
+- Provides raw price and volume data
+- Requires calculation of derived metrics (amplitude, change %, turnover rate)
+- Includes outstanding share information
+
+### East Money (`em`)
+
+- Uses `ak.stock_zh_a_hist()` for stock data
+- Provides pre-calculated derived metrics
+- Outstanding shares calculated from volume and turnover rate
+- Different column naming requiring mapping
 
 ## Testing Strategy
 
@@ -150,3 +224,5 @@ versioning and changelog generation.
   dates and null values
 - Trading date calendar is automatically updated during health checks to ensure accurate date
   alignment
+- All data operations are fault-tolerant - individual failures don't stop the entire process
+- Progress tracking with tqdm provides real-time feedback during bulk operations
