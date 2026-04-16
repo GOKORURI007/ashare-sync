@@ -13,9 +13,14 @@ from .. import config
 app = typer.Typer(help='检查数据集的数据完整性和正确性。')
 
 # Required fields for stock data
-REQUIRED_FIELDS = {
+STOCK_REQUIRED_FIELDS = {
     'date', 'symbol', 'open', 'close', 'high', 'low',
     'volume', 'turnover', 'amplitude', 'cp', 'ca', 'tr', 'outstanding_share'
+}
+
+# Required fields for index data (simpler)
+INDEX_REQUIRED_FIELDS = {
+    'date', 'symbol', 'open', 'close', 'high', 'low'
 }
 
 
@@ -99,17 +104,17 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
     return errors
 
 
-def check_missing_fields(df: DataFrame, symbol: str) -> list[str]:
+def check_missing_fields(df: DataFrame, symbol: str, required_fields: set) -> list[str]:
     """检查缺失字段"""
     errors = []
 
     # Check for completely missing columns
-    missing_columns = REQUIRED_FIELDS - set(df.columns)
+    missing_columns = required_fields - set(df.columns)
     if missing_columns:
         errors.append(f"Missing columns: {missing_columns}")
 
     # Check for columns with null values
-    for col in REQUIRED_FIELDS:
+    for col in required_fields:
         if col in df.columns:
             null_count = df[col].isna().sum()
             if null_count > 0:
@@ -245,6 +250,10 @@ def health_check(cfg: config.Config, fix: bool = False):
         symbol = file_path.stem
         errors = []
 
+        # Determine if this is an index or stock file
+        is_index_file = 'index' in str(file_path.parent)
+        required_fields = INDEX_REQUIRED_FIELDS if is_index_file else STOCK_REQUIRED_FIELDS
+
         try:
             # Read data
             if os.path.getsize(file_path) == 0:
@@ -256,12 +265,13 @@ def health_check(cfg: config.Config, fix: bool = False):
                 errors.append("Empty dataframe")
                 continue
 
-            # Always try to derive missing fields
-            df = derive_missing_fields(df)
+            # Always try to derive missing fields (only for stocks)
+            if not is_index_file:
+                df = derive_missing_fields(df)
 
             # Run all checks
             date_errors = check_trading_date_alignment(df, trade_dates, symbol)
-            field_errors = check_missing_fields(df, symbol)
+            field_errors = check_missing_fields(df, symbol, required_fields)
             invalid_errors = check_invalid_values(df, symbol)
 
             errors.extend(date_errors)

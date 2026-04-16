@@ -13,6 +13,7 @@ from rich.table import Table
 from . import __version__
 from .commands import health_check, sync_hist, sync_list
 from .config import Config, DataSource, LogLevel
+from .utils import init_logger
 
 app = typer.Typer(help='A股数据同步工具', add_completion=True)
 app.command(name='sync-list', help='同步股票和指数列表。')(sync_list.cmd)
@@ -95,6 +96,7 @@ def main(
 
     # 覆盖配置
     cfg = replace(cfg, **overrides)
+    init_logger(cfg)
 
     if show_config:
         # 方法 A：快速调试（带颜色、类型和属性说明）
