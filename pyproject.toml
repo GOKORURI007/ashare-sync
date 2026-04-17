@@ -2,7 +2,7 @@
 name = "ashare-sync"
 version = "0.1.2"
 description = "用于同步A股数据。Used for synchronizing A-share data."
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "akshare>=1.18.55",
     "loguru>=0.7.3",
