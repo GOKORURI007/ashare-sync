@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import os
-import pathlib
 
 import akshare as ak
 import pandas as pd
@@ -9,18 +8,18 @@ from loguru import logger
 from pandas import DataFrame
 from tqdm import tqdm
 
-from src.ashare_sync import config
+from .. import config
 
 INDEX_CONS_DATA_DICT = {
-    '日期': 'date',  # date
-    '指数代码': 'symbol',  # str
-    '指数名称': 'name',  # str
-    '指数英文名称': 'name_en',  # str
-    '成分券代码': 'stock_symbol',  # str
-    '成分券名称': 'stock_name',  # str
-    '成分券英文名称': 'stock_name_en',  # str
-    '交易所': 'exchange',  # str
-    '交易所英文名称': 'exchange_en',  # str
+    '日期': 'date',
+    '指数代码': 'symbol',
+    '指数名称': 'name',
+    '指数英文名称': 'name_en',
+    '成分券代码': 'stock_symbol',
+    '成分券名称': 'stock_name',
+    '成分券英文名称': 'stock_name_en',
+    '交易所': 'exchange',
+    '交易所英文名称': 'exchange_en',
 }
 
 app = typer.Typer(help='同步股票和指数列表。')
@@ -58,7 +57,7 @@ def sync_stock_list(cfg: config.Config):
     logger.debug(f'北交所股票：{len(bj_code_name)} 条记录')
 
     a_code_name = pd.DataFrame({
-        'symbol': pd.concat(  # str
+        'symbol': pd.concat(
             [
                 sz_code_name['A股代码'].apply(lambda x: 'sz' + x),
                 sh_code_name['证券代码'].apply(lambda x: 'sh' + x),
@@ -66,18 +65,18 @@ def sync_stock_list(cfg: config.Config):
             ],
             axis=0,
         ),
-        'code': pd.concat(  # str
+        'code': pd.concat(
             [sz_code_name['A股代码'], sh_code_name['证券代码'], bj_code_name['证券代码']], axis=0
         ),
-        'name': pd.concat(  # str
+        'name': pd.concat(
             [sz_code_name['A股简称'], sh_code_name['证券简称'], bj_code_name['证券简称']], axis=0
         ),
     })
 
-    sz_code_name.to_csv(os.path.join(data_dir, 'sz_code_name.csv'), index=False)
-    sh_code_name.to_csv(os.path.join(data_dir, 'sh_code_name.csv'), index=False)
-    bj_code_name.to_csv(os.path.join(data_dir, 'bj_code_name.csv'), index=False)
-    a_code_name.to_csv(os.path.join(data_dir, 'a_code_name.csv'), index=False)
+    sz_code_name.to_parquet(os.path.join(data_dir, 'sz_code_name.parquet'), index=False)
+    sh_code_name.to_parquet(os.path.join(data_dir, 'sh_code_name.parquet'), index=False)
+    bj_code_name.to_parquet(os.path.join(data_dir, 'bj_code_name.parquet'), index=False)
+    a_code_name.to_parquet(os.path.join(data_dir, 'a_code_name.parquet'), index=False)
 
     logger.success(f'股票列表同步完成。总计：{len(a_code_name)} 只股票已保存。')
 
@@ -101,11 +100,11 @@ def sync_index_list(cfg: config.Config):
     logger.debug(f'获取到 {len(index_info)} 条指数记录')
 
     index_a_code_name = pd.DataFrame({
-        'symbol': index_info['代码'],  # str
-        'code': index_info['代码'].apply(lambda x: x[2:]),  # str
-        'name': index_info['名称'],  # str
+        'symbol': index_info['代码'],
+        'code': index_info['代码'].apply(lambda x: x[2:]),
+        'name': index_info['名称'],
     })
-    index_a_code_name.to_csv(os.path.join(data_dir, 'a_index_code_name.csv'), index=False)
+    index_a_code_name.to_parquet(os.path.join(data_dir, 'a_index_code_name.parquet'), index=False)
 
     logger.success(f'指数列表同步完成。总计：{len(index_a_code_name)} 个指数已保存。')
 
@@ -133,8 +132,8 @@ def sync_index_composition(
         df['stock_symbol'] = df['stock_symbol'].map(symbol_map)
 
         # 4. 保存结果
-        file_path = save_dir / f'{row["symbol"]}.csv'
-        df.to_csv(file_path, index=False)
+        file_path = save_dir / f'{row["symbol"]}.parquet'
+        df.to_parquet(file_path, index=False)
 
 
 @app.command()
@@ -158,8 +157,8 @@ def cmd(
 
     # 加载基础对照表
     # a_index_code_name 包含指数代码，a_stock_code_name 包含个股代码
-    index_code_name = pd.read_csv(os.path.join(cfg.data_dir, 'a_index_code_name.csv'))
-    stock_code_name = pd.read_csv(os.path.join(cfg.data_dir, 'a_code_name.csv'))
+    index_code_name = pd.read_parquet(os.path.join(cfg.data_dir, 'a_index_code_name.parquet'))
+    stock_code_name = pd.read_parquet(os.path.join(cfg.data_dir, 'a_code_name.parquet'))
 
     # 根据 cons_list 过滤需要同步的指数
     if 'full' not in cons_list:
@@ -170,14 +169,3 @@ def cmd(
         sync_index_composition(cfg, index_code_name, stock_code_name)
     else:
         typer.echo('没有找到匹配的指数代码，请检查 --cons-list 输入')
-
-
-if __name__ == '__main__':
-    cons_list = ['sh000300']
-    cfg = config.Config()
-    cfg.data_dir = pathlib.Path('D:\\MyProjects\\ashare-sync\\data')
-    index_code_name = pd.read_csv(os.path.join(cfg.data_dir, 'a_index_code_name.csv'))
-    stock_code_name = pd.read_csv(os.path.join(cfg.data_dir, 'a_code_name.csv'))
-    index_code_name = index_code_name[index_code_name['symbol'].isin(cons_list)]
-    sync_index_composition(cfg, index_code_name, stock_code_name)
-    print(index_code_name)

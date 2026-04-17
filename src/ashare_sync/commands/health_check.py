@@ -34,9 +34,9 @@ INDEX_REQUIRED_FIELDS = {'date', 'symbol', 'open', 'close', 'high', 'low'}
 
 
 def update_trade_date(cfg: config.Config) -> DataFrame:
-    """ 更新交易日日历
+    """更新交易日日历
 
-    从新浪财经获取历史交易日数据并保存到 CSV 文件。
+    从新浪财经获取历史交易日数据并保存到 Parquet 文件。
 
     Args:
         cfg: 配置对象，包含数据目录路径
@@ -45,12 +45,12 @@ def update_trade_date(cfg: config.Config) -> DataFrame:
         包含交易日数据的 DataFrame
     """
     df = ak.tool_trade_date_hist_sina()
-    df.to_csv(cfg.data_dir / 'trade_date.csv', index=False)
+    df.to_parquet(cfg.data_dir / 'trade_date.parquet', index=False)
     return df
 
 
 def derive_missing_fields(df: DataFrame) -> DataFrame:
-    """ 尝试推导缺失的字段
+    """尝试推导缺失的字段
 
     根据已有的价格、成交量等数据计算衍生指标：
     - ca (涨跌额): 当日收盘价 - 前一日收盘价
@@ -108,7 +108,7 @@ def derive_missing_fields(df: DataFrame) -> DataFrame:
 
 
 def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: str) -> list[str]:
-    """ 检查交易日对齐情况
+    """检查交易日对齐情况
 
     验证股票数据的日期范围是否与交易日历一致，检测是否有缺失的交易日。
 
@@ -149,7 +149,7 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
 
 
 def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
-    """ 检查缺失字段
+    """检查缺失字段
 
     验证数据是否包含所有必需字段，以及这些字段是否存在空值。
 
@@ -178,7 +178,7 @@ def check_missing_fields(df: DataFrame, required_fields: set) -> list[str]:
 
 
 def check_invalid_values(df: DataFrame) -> list[str]:
-    """ 检查非法值
+    """检查非法值
 
     检测数据中的异常值：
     - 负的价格或成交量
@@ -217,7 +217,7 @@ def check_invalid_values(df: DataFrame) -> list[str]:
 
 
 def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataFrame:
-    """ 修复数据问题
+    """修复数据问题
 
     执行以下修复操作：
     1. 补全缺失的交易日（使用前一日数据填充）
@@ -276,7 +276,7 @@ def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataF
 
 
 def health_check(cfg: config.Config, fix: bool = False):
-    """ 检查数据集的数据完整性和正确性。
+    """检查数据集的数据完整性和正确性。
     1. 检查每支股票的交易日与交易日历的对齐，即股票最早日期到最终日期应当与交易日历中对应的时间段一致，不应当缺少某些日期
     2. 检查股票是否存在缺失字段，股票应当包含以下字段：
         - date: 交易日期
@@ -318,9 +318,9 @@ def health_check(cfg: config.Config, fix: bool = False):
 
     all_files = []
     if stocks_dir.exists():
-        all_files.extend(list(stocks_dir.glob('*.csv')))
+        all_files.extend(list(stocks_dir.glob('*.parquet')))
     if index_dir.exists():
-        all_files.extend(list(index_dir.glob('*.csv')))
+        all_files.extend(list(index_dir.glob('*.parquet')))
 
     if not all_files:
         logger.warning('未找到需要检查的数据文件')
@@ -345,7 +345,7 @@ def health_check(cfg: config.Config, fix: bool = False):
                 errors.append('文件为空')
                 continue
 
-            df = pd.read_csv(file_path)
+            df = pd.read_parquet(file_path)
             if df.empty:
                 errors.append('数据框为空')
                 continue
@@ -375,7 +375,7 @@ def health_check(cfg: config.Config, fix: bool = False):
             errors.extend(invalid_errors)
 
             if not errors or not fix:
-                df.to_csv(file_path, index=False)
+                df.to_parquet(file_path, index=False)
 
             if errors:
                 total_errors += len(errors)
@@ -386,7 +386,7 @@ def health_check(cfg: config.Config, fix: bool = False):
                     df_fixed = fix_data_issues(df, trade_dates, symbol)
 
                     # 保存修复后的数据
-                    df_fixed.to_csv(file_path, index=False)
+                    df_fixed.to_parquet(file_path, index=False)
                     fixed_files += 1
                     logger.info(f'已修复 {symbol} - 保存 {len(df_fixed)} 条记录')
             else:

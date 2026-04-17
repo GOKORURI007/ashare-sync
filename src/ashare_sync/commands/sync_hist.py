@@ -171,33 +171,35 @@ def sync_daily_history(cfg: config.Config):
         cfg: 配置对象，包含 data_dir 路径
 
     读取文件:
-        - {data_dir}/a_code_name.csv: 股票列表
-        - {data_dir}/a_index_code_name.csv: 指数列表
+        - {data_dir}/a_code_name.parquet: 股票列表
+        - {data_dir}/a_index_code_name.parquet: 指数列表
 
     保存文件:
-        - {data_dir}/stocks/{code}.csv: 个股日线历史数据
-        - {data_dir}/index/{symbol}.csv: 个指数日线历史数据
+        - {data_dir}/stocks/{code}.parquet: 个股日线历史数据
+        - {data_dir}/index/{symbol}.parquet: 个指数日线历史数据
     """
     data_dir = cfg.data_dir
     today = datetime.date.today().strftime('%Y%m%d')
-    logger.info(f'Starting daily history sync for date: {today}')
+    logger.info(f'开始同步日线历史数据，日期: {today}')
 
-    a_code_name = pd.read_csv(os.path.join(data_dir, 'a_code_name.csv'), dtype=str)
-    a_index_code_name = pd.read_csv(os.path.join(data_dir, 'a_index_code_name.csv'), dtype=str)
+    a_code_name = pd.read_parquet(os.path.join(data_dir, 'a_code_name.parquet'),
+                                  dtype_backend='pyarrow')
+    a_index_code_name = pd.read_parquet(os.path.join(data_dir, 'a_index_code_name.parquet'),
+                                        dtype_backend='pyarrow')
 
     os.makedirs(os.path.join(data_dir, 'stocks'), exist_ok=True)
     os.makedirs(os.path.join(data_dir, 'index'), exist_ok=True)
 
-    logger.info(f'Syncing daily history for {len(a_code_name)} stocks...')
+    logger.info(f'正在同步 {len(a_code_name)} 只股票的日线历史数据...')
     stock_success = 0
     stock_error = 0
 
     for index, row in tqdm(a_code_name.iterrows(), total=len(a_code_name), desc='Stocks'):
-        stock_datapath = os.path.join(data_dir, f'stocks/{row["symbol"]}.csv')
+        stock_datapath = os.path.join(data_dir, f'stocks/{row["symbol"]}.parquet')
         try:
-            old_data = pd.read_csv(stock_datapath) if os.path.exists(stock_datapath) else None
-        except pd.errors.EmptyDataError:
-            logger.warning(f'Empty data file for {row["symbol"]}, will re-fetch full history')
+            old_data = pd.read_parquet(stock_datapath) if os.path.exists(stock_datapath) else None
+        except Exception as e:
+            logger.warning(f'读取 {row["symbol"]} 的数据文件失败: {e}，将重新获取完整历史数据')
             old_data = None
 
         last_day = None
@@ -213,14 +215,14 @@ def sync_daily_history(cfg: config.Config):
                     end_date=today,
                 )
             except Exception as e:
-                logger.error(f'Failed to fetch data for {row["symbol"]} ({row["name"]}): {e}')
+                logger.error(f'获取 {row["symbol"]} ({row["name"]}) 的数据失败: {e}')
                 stock_error += 1
                 continue
             if stock_daily_history.empty:
-                logger.debug(f'No new data for {row["symbol"]} since {last_day}')
+                logger.debug(f'{row["symbol"]} 自 {last_day} 以来无新数据')
                 continue
             logger.debug(
-                f'Updated {row["symbol"]} ({len(stock_daily_history) - len(old_data)} new records)'
+                f'已更新 {row["symbol"]} (新增 {len(stock_daily_history) - len(old_data)} 条记录)'
             )
         else:
             try:
@@ -232,28 +234,28 @@ def sync_daily_history(cfg: config.Config):
                 )
             except Exception as e:
                 logger.error(
-                    f'Failed to fetch full history for {row["symbol"]} ({row["name"]}): {e}'
+                    f'获取 {row["symbol"]} ({row["name"]}) 的完整历史数据失败: {e}'
                 )
                 stock_error += 1
                 continue
             logger.debug(
-                f'Fetched full history for {row["symbol"]} ({len(stock_daily_history)} records)'
+                f'已获取 {row["symbol"]} 的完整历史数据 ({len(stock_daily_history)} 条记录)'
             )
 
-        stock_daily_history.to_csv(stock_datapath, index=False)
+        stock_daily_history.to_parquet(stock_datapath, index=False)
         stock_success += 1
 
-    logger.info(f'Stock sync completed: {stock_success} success, {stock_error} errors')
+    logger.info(f'股票同步完成: {stock_success} 成功, {stock_error} 失败')
 
-    logger.info(f'Syncing daily history for {len(a_index_code_name)} indices...')
+    logger.info(f'正在同步 {len(a_index_code_name)} 个指数的日线历史数据...')
     index_success = 0
     index_error = 0
 
     for index, row in tqdm(
         a_index_code_name.iterrows(), total=len(a_index_code_name), desc='Indices'
     ):
-        index_datapath = os.path.join(data_dir, f'index/{row["symbol"]}.csv')
-        old_data = pd.read_csv(index_datapath) if os.path.exists(index_datapath) else None
+        index_datapath = os.path.join(data_dir, f'index/{row["symbol"]}.parquet')
+        old_data = pd.read_parquet(index_datapath) if os.path.exists(index_datapath) else None
 
         last_day = None
         if old_data is not None:
@@ -263,35 +265,35 @@ def sync_daily_history(cfg: config.Config):
             try:
                 index_daily_history = ak.stock_zh_index_daily(symbol=row['symbol'])
             except Exception as e:
-                logger.error(f'Failed to fetch index data for {row["symbol"]}: {e}')
+                logger.error(f'获取指数 {row["symbol"]} 的数据失败: {e}')
                 index_error += 1
                 continue
             if index_daily_history.empty:
-                logger.debug(f'No new data for index {row["symbol"]} since {last_day}')
+                logger.debug(f'指数 {row["symbol"]} 自 {last_day} 以来无新数据')
                 continue
             index_daily_history['symbol'] = row['symbol']
             index_daily_history = pd.concat(
                 [old_data, index_daily_history], axis=0
             ).drop_duplicates(subset=['date'])
             logger.debug(
-                f'Updated index {row["symbol"]} ({len(index_daily_history) - len(old_data)} new records)'
+                f'已更新指数 {row["symbol"]} (新增 {len(index_daily_history) - len(old_data)} 条记录)'
             )
         else:
             try:
                 index_daily_history = ak.stock_zh_index_daily(symbol=row['symbol'])
             except Exception as e:
-                logger.error(f'Failed to fetch full index history for {row["symbol"]}: {e}')
+                logger.error(f'获取指数 {row["symbol"]} 的完整历史数据失败: {e}')
                 index_error += 1
                 continue
             logger.debug(
-                f'Fetched full history for index {row["symbol"]} ({len(index_daily_history)} records)'
+                f'已获取指数 {row["symbol"]} 的完整历史数据 ({len(index_daily_history)} 条记录)'
             )
         index_daily_history['symbol'] = row['symbol']
-        index_daily_history.to_csv(index_datapath, index=False)
+        index_daily_history.to_parquet(index_datapath, index=False)
         index_success += 1
 
-    logger.info(f'Index sync completed: {index_success} success, {index_error} errors')
-    logger.success(f'Daily history sync completed for {today}')
+    logger.info(f'指数同步完成: {index_success} 成功, {index_error} 失败')
+    logger.success(f'{today} 的日线历史数据同步完成')
 
 
 @app.command()
