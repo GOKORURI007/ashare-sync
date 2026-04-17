@@ -240,7 +240,7 @@ def sync_daily_history(cfg: config.Config):
         if old_data is not None:
             last_day = old_data.sort_values('date')['date'].tolist()[-1].strftime('%Y%m%d')
 
-        if int(last_day) < int(today):
+        if old_data is None or int(last_day) < int(today):
             try:
                 index_daily_history = ak.stock_zh_index_daily(symbol=row['symbol'])
             except Exception as e:
