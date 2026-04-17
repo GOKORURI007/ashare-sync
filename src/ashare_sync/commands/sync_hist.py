@@ -13,30 +13,30 @@ from tqdm import tqdm
 from .. import config
 
 EAST_MONEY_DATA_DICT = {
-    '日期': 'date',
-    '股票代码': 'symbol',
-    '开盘': 'open',
-    '收盘': 'close',
-    '最高': 'high',
-    '最低': 'low',
-    '成交量': 'volume',
-    '成交额': 'turnover',
-    '振幅': 'amplitude',
-    '涨跌幅': 'cp',
-    '涨跌额': 'ca',
-    '换手率': 'tr',
+    '日期': 'date',  # date
+    '股票代码': 'symbol',  # str
+    '开盘': 'open',  # float
+    '收盘': 'close',  # float
+    '最高': 'high',  # float
+    '最低': 'low',  # float
+    '成交量': 'volume',  # int
+    '成交额': 'turnover',  # float
+    '振幅': 'amplitude',  # float
+    '涨跌幅': 'cp',  # float
+    '涨跌额': 'ca',  # float
+    '换手率': 'tr',  # float
     # '流动股本': 成交量 / 换手率 *100(股) outstanding_share
 }
 
 SINA_DATA_DICT = {
-    'date': 'date',
-    'open': 'open',
-    'close': 'close',
-    'high': 'high',
-    'low': 'low',
-    'volume': 'volume',
-    'turnover': 'turnover',
-    'outstanding_share': 'outstanding_share',
+    'date': 'date',  # date
+    'open': 'open',  # float
+    'close': 'close',  # float
+    'high': 'high',  # float
+    'low': 'low',  # float
+    'volume': 'volume',  # int
+    'turnover': 'turnover',  # float
+    'outstanding_share': 'outstanding_share',  # int
     # '股票代码': symbol
     # '振幅':  $\frac{High_{today} - Low_{today}}{Close_{yesterday}} \times 100$ amplitude
     # '涨跌幅': $\frac{Close_{today} - Close_{yesterday}}{Close_{yesterday}} \times 100$ cp
