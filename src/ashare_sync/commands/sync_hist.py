@@ -3,40 +3,40 @@ import datetime
 import os
 
 import akshare as ak
-import numpy as np
 import pandas as pd
 import typer
 from loguru import logger
-from pandas.core.interchange.dataframe_protocol import DataFrame
+from pandas import DataFrame
 from tqdm import tqdm
 
+from ashare_sync.utils import derive_missing_fields
 from .. import config
 
 EAST_MONEY_DATA_DICT = {
-    '日期': 'date',  # date
-    '股票代码': 'symbol',  # str
-    '开盘': 'open',  # float
-    '收盘': 'close',  # float
-    '最高': 'high',  # float
-    '最低': 'low',  # float
-    '成交量': 'volume',  # int
-    '成交额': 'turnover',  # float
-    '振幅': 'amplitude',  # float
-    '涨跌幅': 'cp',  # float
-    '涨跌额': 'ca',  # float
-    '换手率': 'tr',  # float
-    # '流动股本': 成交量 / 换手率 *100(股) outstanding_share
+    '日期': 'date',
+    '股票代码': 'symbol',
+    '开盘': 'open',
+    '收盘': 'close',
+    '最高': 'high',
+    '最低': 'low',
+    '成交量': 'volume',
+    '成交额': 'amount',
+    '振幅': 'amplitude',  # (%)
+    '涨跌幅': 'cp',  # (%)
+    '涨跌额': 'ca',
+    '换手率': 'tr',  # (%)
+    # '流动股本': 成交量 / 换手率 (%) *100(股) outstanding_share
 }
 
 SINA_DATA_DICT = {
-    'date': 'date',  # date
-    'open': 'open',  # float
-    'close': 'close',  # float
-    'high': 'high',  # float
-    'low': 'low',  # float
-    'volume': 'volume',  # int
-    'turnover': 'turnover',  # float
-    'outstanding_share': 'outstanding_share',  # int
+    'date': 'date',
+    'open': 'open',
+    'close': 'close',
+    'high': 'high',
+    'low': 'low',
+    'volume': 'volume',
+    'turnover': 'tr',  # 换手率 = 成交量 / 流动股本
+    'outstanding_share': 'outstanding_share',
     # '股票代码': symbol
     # '振幅':  $\frac{High_{today} - Low_{today}}{Close_{yesterday}} \times 100$ amplitude
     # '涨跌幅': $\frac{Close_{today} - Close_{yesterday}}{Close_{yesterday}} \times 100$ cp
@@ -52,9 +52,9 @@ def get_stock_daily_history(
     symbol: str,
     start_date: str,
     end_date: str,
+    old_data: DataFrame | None,
     period: str = 'daily',
     adjust: str = 'hfq',
-    old_data: DataFrame | None = None,
 ):
     """
     获取股票每日历史行情数据。
@@ -105,7 +105,10 @@ def get_stock_daily_history(
         if new_df is not None:
             new_df = new_df.rename(columns=EAST_MONEY_DATA_DICT)
             new_df['symbol'] = symbol
-        return new_df
+            new_df['date'] = pd.to_datetime(new_df['date']).dt.date
+        else:
+            return None
+
     elif cfg.data_source == 'sina':
         new_df = ak.stock_zh_a_daily(
             symbol=symbol,
@@ -115,48 +118,22 @@ def get_stock_daily_history(
         )
         new_df = new_df.rename(columns=SINA_DATA_DICT)
         new_df['symbol'] = symbol
+        new_df['date'] = pd.to_datetime(new_df['date']).dt.date
 
-        # 2. 拼接与彻底去重
-        if old_data is not None:
-            # 即使 old_data 缺少某些列，concat 也会自动补齐 NaN
-            df = pd.concat([old_data, new_df], axis=0, ignore_index=True)
-            # 统一日期格式，防止因 str 和 datetime 混用导致去重失败
-            df['date'] = pd.to_datetime(df['date']).dt.date
-            df = df.drop_duplicates(subset=['date']).sort_values('date').reset_index(drop=True)
-        else:
-            df = new_df.sort_values('date').reset_index(drop=True)
-
-        # 3. 【全量重算】派生指标
-        # 无论 old_data 有没有这些列，直接通过向量化操作覆盖它们
-        # 这样可以自动修补"断层"并统一旧数据格式
-
-        last_close = df['close'].shift(1)
-
-        df['ca'] = df['close'] - last_close
-        df['cp'] = (df['ca'] / last_close) * 100
-        df['amplitude'] = (df['high'] - df['low']) / last_close * 100
-
-        # 4. 股本与换手率的特殊处理
-        if cfg.data_source == 'em':
-            # 优先通过东财的成交量和换手率反推股本
-            # 即使 old_data 没这列，这里也会全量创建
-            df['outstanding_share'] = (df['volume'] * 100) / (df['tr'] / 100)
-        else:
-            # 如果是新浪源且 old_data 有股本，new_df 没股本，先填充股本再算 tr
-            # 这里假设 outstanding_share 这种属性数据在增量时是稳定的
-            df['tr'] = (df['volume'] / df['outstanding_share']) * 100
-
-        # 5. 最终清洗
-        # 派生指标的首行 NaN 填 0（代表没有变化）
-        df[['ca', 'cp', 'amplitude', 'tr']] = df[['ca', 'cp', 'amplitude', 'tr']].fillna(0)
-
-        # 流动股本必须前向 + 后向填充（解决停牌导致的 inf 和首行 NaN）
-        df['outstanding_share'] = (
-            df['outstanding_share'].replace([np.inf, -np.inf], np.nan).ffill().bfill()
-        )
     else:
         raise NotImplementedError(f'不支持数据源 {cfg.data_source}')
 
+    # 拼接与去重
+    if old_data is not None:
+        # 统一日期格式，防止因 str 和 datetime 混用导致去重失败
+        old_data['date'] = pd.to_datetime(old_data['date']).dt.date
+        # 即使 old_data 缺少某些列，concat 也会自动补齐 NaN
+        df = pd.concat([old_data, new_df], axis=0, ignore_index=True)
+        df = df.drop_duplicates(subset=['date']).sort_values('date').reset_index(drop=True)
+    else:
+        df = new_df.sort_values('date').reset_index(drop=True)
+
+    df = derive_missing_fields(df)
     return df
 
 
@@ -182,10 +159,12 @@ def sync_daily_history(cfg: config.Config):
     today = datetime.date.today().strftime('%Y%m%d')
     logger.info(f'开始同步日线历史数据，日期: {today}')
 
-    a_code_name = pd.read_parquet(os.path.join(data_dir, 'a_code_name.parquet'),
-                                  dtype_backend='pyarrow')
-    a_index_code_name = pd.read_parquet(os.path.join(data_dir, 'a_index_code_name.parquet'),
-                                        dtype_backend='pyarrow')
+    a_code_name = pd.read_parquet(
+        os.path.join(data_dir, 'a_code_name.parquet'), dtype_backend='pyarrow'
+    )
+    a_index_code_name = pd.read_parquet(
+        os.path.join(data_dir, 'a_index_code_name.parquet'), dtype_backend='pyarrow'
+    )
 
     os.makedirs(os.path.join(data_dir, 'stocks'), exist_ok=True)
     os.makedirs(os.path.join(data_dir, 'index'), exist_ok=True)
@@ -204,7 +183,7 @@ def sync_daily_history(cfg: config.Config):
 
         last_day = None
         if old_data is not None:
-            last_day = old_data.sort_values('date')['date'].tolist()[-1].replace('-', '')
+            last_day = old_data.sort_values('date')['date'].tolist()[-1].strftime('%Y%m%d')
 
         if old_data is not None and int(last_day) < int(today):
             try:
@@ -213,6 +192,7 @@ def sync_daily_history(cfg: config.Config):
                     symbol=row['symbol'],
                     start_date=str(int(last_day) + 1),
                     end_date=today,
+                    old_data=old_data,
                 )
             except Exception as e:
                 logger.error(f'获取 {row["symbol"]} ({row["name"]}) 的数据失败: {e}')
@@ -231,11 +211,10 @@ def sync_daily_history(cfg: config.Config):
                     symbol=row['symbol'],
                     start_date='19700101',
                     end_date=today,
+                    old_data=old_data,
                 )
             except Exception as e:
-                logger.error(
-                    f'获取 {row["symbol"]} ({row["name"]}) 的完整历史数据失败: {e}'
-                )
+                logger.error(f'获取 {row["symbol"]} ({row["name"]}) 的完整历史数据失败: {e}')
                 stock_error += 1
                 continue
             logger.debug(
@@ -259,9 +238,9 @@ def sync_daily_history(cfg: config.Config):
 
         last_day = None
         if old_data is not None:
-            last_day = old_data.sort_values('date')['date'].tolist()[-1].replace('-', '')
+            last_day = old_data.sort_values('date')['date'].tolist()[-1].strftime('%Y%m%d')
 
-        if old_data is not None and int(last_day) < int(today):
+        if int(last_day) < int(today):
             try:
                 index_daily_history = ak.stock_zh_index_daily(symbol=row['symbol'])
             except Exception as e:
@@ -272,24 +251,14 @@ def sync_daily_history(cfg: config.Config):
                 logger.debug(f'指数 {row["symbol"]} 自 {last_day} 以来无新数据')
                 continue
             index_daily_history['symbol'] = row['symbol']
-            index_daily_history = pd.concat(
-                [old_data, index_daily_history], axis=0
-            ).drop_duplicates(subset=['date'])
+            index_daily_history['date'] = pd.to_datetime(index_daily_history['date']).dt.date
+            index_daily_history.to_parquet(index_datapath, index=False)
             logger.debug(
                 f'已更新指数 {row["symbol"]} (新增 {len(index_daily_history) - len(old_data)} 条记录)'
             )
         else:
-            try:
-                index_daily_history = ak.stock_zh_index_daily(symbol=row['symbol'])
-            except Exception as e:
-                logger.error(f'获取指数 {row["symbol"]} 的完整历史数据失败: {e}')
-                index_error += 1
-                continue
-            logger.debug(
-                f'已获取指数 {row["symbol"]} 的完整历史数据 ({len(index_daily_history)} 条记录)'
-            )
-        index_daily_history['symbol'] = row['symbol']
-        index_daily_history.to_parquet(index_datapath, index=False)
+            logger.debug(f'无需更新指数 {row["symbol"]}，已为最新记录)')
+
         index_success += 1
 
     logger.info(f'指数同步完成: {index_success} 成功, {index_error} 失败')

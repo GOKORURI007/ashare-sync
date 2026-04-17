@@ -9,6 +9,7 @@ from pandas import DataFrame
 from tqdm import tqdm
 
 from .. import config
+from ..utils import derive_missing_fields
 
 app = typer.Typer(help='检查数据集的数据完整性和正确性。')
 
@@ -45,69 +46,13 @@ def update_trade_date(cfg: config.Config) -> DataFrame:
         包含交易日数据的 DataFrame
     """
     df = ak.tool_trade_date_hist_sina()
+    df = df.rename(columns={'trade_date': 'date'})
+    df['date'] = pd.to_datetime(df['date']).dt.date
     df.to_parquet(cfg.data_dir / 'trade_date.parquet', index=False)
     return df
 
 
-def derive_missing_fields(df: DataFrame) -> DataFrame:
-    """尝试推导缺失的字段
-
-    根据已有的价格、成交量等数据计算衍生指标：
-    - ca (涨跌额): 当日收盘价 - 前一日收盘价
-    - cp (涨跌幅): (涨跌额 / 前一日收盘价) * 100%
-    - amplitude (振幅): (最高价 - 最低价) / 前一日收盘价 * 100%
-    - tr (换手率): (成交量 / 流通股本) * 100%
-    - outstanding_share (流通股本): 如果缺失但已知成交量和换手率，可反推
-
-    Args:
-        df: 原始股票数据 DataFrame
-
-    Returns:
-        补充了缺失字段的 DataFrame
-    """
-    result_df = df.copy()
-
-    # Calculate derived fields if missing
-    if 'ca' not in result_df.columns or result_df['ca'].isna().any():
-        last_close = result_df['close'].shift(1)
-        result_df['ca'] = result_df['close'] - last_close
-        result_df['ca'] = result_df['ca'].fillna(0)
-
-    if 'cp' not in result_df.columns or result_df['cp'].isna().any():
-        last_close = result_df['close'].shift(1)
-        result_df['cp'] = (result_df['ca'] / last_close) * 100
-        result_df['cp'] = result_df['cp'].fillna(0)
-
-    if 'amplitude' not in result_df.columns or result_df['amplitude'].isna().any():
-        last_close = result_df['close'].shift(1)
-        result_df['amplitude'] = (result_df['high'] - result_df['low']) / last_close * 100
-        result_df['amplitude'] = result_df['amplitude'].fillna(0)
-
-    # Calculate turnover rate if we have volume and outstanding_share
-    if 'tr' not in result_df.columns or result_df['tr'].isna().any():
-        if 'outstanding_share' in result_df.columns and 'volume' in result_df.columns:
-            result_df['tr'] = (result_df['volume'] / result_df['outstanding_share']) * 100
-            result_df['tr'] = result_df['tr'].fillna(0)
-
-    # Calculate turnover (amount) if missing but we have other data
-    if 'turnover' not in result_df.columns or result_df['turnover'].isna().any():
-        # Can't reliably calculate turnover without additional info, leave as is
-        pass
-
-    # Calculate outstanding_share if missing but we have volume and tr
-    if 'outstanding_share' not in result_df.columns or result_df['outstanding_share'].isna().any():
-        if 'volume' in result_df.columns and 'tr' in result_df.columns:
-            # outstanding_share = volume * 100 / tr (since tr = volume/outstanding_share * 100)
-            result_df['outstanding_share'] = (result_df['volume'] * 100) / result_df['tr']
-            result_df['outstanding_share'] = result_df['outstanding_share'].replace(
-                [np.inf, -np.inf], np.nan
-            )
-            result_df['outstanding_share'] = result_df['outstanding_share'].ffill().bfill()
-
-    return result_df
-
-
-def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: str) -> list[str]:
+def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame) -> list[str]:
     """检查交易日对齐情况
 
     验证股票数据的日期范围是否与交易日历一致，检测是否有缺失的交易日。
@@ -115,7 +60,6 @@ def check_trading_date_alignment(df: DataFrame, trade_dates: DataFrame, symbol: 
     Args:
         df: 股票数据 DataFrame
         trade_dates: 交易日历 DataFrame
-        symbol: 股票代码
 
     Returns:
         错误信息列表，如果日期对齐则返回空列表
@@ -216,7 +160,7 @@ def check_invalid_values(df: DataFrame) -> list[str]:
     return errors
 
 
-def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataFrame:
+def fix_data_issues(df: DataFrame, trade_dates: DataFrame) -> DataFrame:
     """修复数据问题
 
     执行以下修复操作：
@@ -227,7 +171,6 @@ def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataF
     Args:
         df: 原始股票数据 DataFrame
         trade_dates: 交易日历 DataFrame
-        symbol: 股票代码
 
     Returns:
         修复后的 DataFrame
@@ -241,7 +184,7 @@ def fix_data_issues(df: DataFrame, trade_dates: DataFrame, symbol: str) -> DataF
     min_date = result_df['date'].min()
     max_date = result_df['date'].max()
 
-    trade_dates_dt = pd.to_datetime(trade_dates['trade_date']).dt.date
+    trade_dates_dt = pd.to_datetime(trade_dates['date']).dt.date
     expected_dates = trade_dates_dt[
         (trade_dates_dt >= min_date) & (trade_dates_dt <= max_date)
     ].tolist()
@@ -366,7 +309,7 @@ def health_check(cfg: config.Config, fix: bool = False):
                 df = derive_missing_fields(df)
 
             # 执行所有检查
-            date_errors = check_trading_date_alignment(df, trade_dates, symbol)
+            date_errors = check_trading_date_alignment(df, trade_dates)
             field_errors = check_missing_fields(df, required_fields)
             invalid_errors = check_invalid_values(df)
 
@@ -383,7 +326,7 @@ def health_check(cfg: config.Config, fix: bool = False):
 
                 if fix:
                     # 应用修复
-                    df_fixed = fix_data_issues(df, trade_dates, symbol)
+                    df_fixed = fix_data_issues(df, trade_dates)
 
                     # 保存修复后的数据
                     df_fixed.to_parquet(file_path, index=False)
